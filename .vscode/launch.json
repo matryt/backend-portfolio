@@ -1,0 +1,15 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "Run Bun",
+      "runtimeExecutable": "bun",
+      "program": "${workspaceFolder}/index.ts",  // ou ton fichier d’entrée
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "runtimeArgs": []
+    }
+  ]
+}
