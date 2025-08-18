@@ -1,7 +1,8 @@
 import { Elysia } from "elysia";
+import { cors } from "@elysiajs/cors";
 import { fetchProjects, getEducationItems, getJobs } from "./notion";
 
-const app = new Elysia();
+const app = new Elysia().use(cors());
 
 app.get("/projects", async () => {
   return await fetchProjects();

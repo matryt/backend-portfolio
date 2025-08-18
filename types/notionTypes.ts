@@ -1,3 +1,6 @@
+import type { Status as StatusType } from "./status";
+import { Status } from "./status";
+
 export interface NotionRichText {
   type: 'text' | string;
   text: { content: string };
@@ -17,6 +20,11 @@ export interface NotionFile {
   file?: { url: string };
 }
 
+export interface NotionStatusSelect {
+  name: string;
+  color: string;
+}
+
 export interface NotionRelation {
   id: string;
 }
@@ -30,6 +38,8 @@ export type NotionProperty =
   | { checkbox?: boolean }
   | { number?: number }
   | { date?: { start: string } }
+  | { status?: NotionStatusSelect }
+  | { select?: NotionStatusSelect }
   | Record<string, any>;
 
 export interface NotionPageProperties {
@@ -64,6 +74,14 @@ export function isTitleProperty(prop: NotionProperty): prop is { title: NotionTi
   return "title" in prop;
 }
 
+export function isStatusProperty(prop: NotionProperty): prop is { status: NotionStatusSelect } {
+  return "status" in prop;
+}
+
+export function isSelectProperty(prop: NotionProperty): prop is { select: NotionStatusSelect } {
+  return "select" in prop;
+}
+
 export function extractRichText(prop: any): string {
   if (!prop) return "";
   const arr = prop.rich_text as Array<any> | undefined;
@@ -80,4 +98,23 @@ export function extractTitle(prop: any): string | undefined {
 
 export function getTimestamp(date: string) {
   return Date.parse(date);
+}
+
+export function getStatus(status: string): StatusType {
+  switch (status) {
+    case "En cours":
+      return Status.inProgress;
+    case "Terminé":
+      return Status.completed;
+    case "En pause":
+      return Status.paused;
+    case "Abandonné":
+      return Status.cancelled;
+    default:
+      throw new Error(`Unknown status: ${status}`);
+  }
+}
+
+export function getProjectType(typ: string) {
+  return typ === "Personnel" ? "personal" : "school";
 }

@@ -13,7 +13,12 @@ import {
   extractRichText,
   extractTitle,
   getTimestamp,
+  isStatusProperty,
+  getStatus,
+  isSelectProperty,
+  getProjectType,
 } from "./types/notionTypes";
+import { Status } from "./types/status";
 
 dotenv.config({ quiet: true });
 
@@ -100,6 +105,25 @@ export async function fetchProjects(): Promise<Project[]> {
       name: raw.Nom && isTitleProperty(raw.Nom)
         ? extractTitle(raw.Nom) || ""
         : "",
+        demo: raw["Démonstration"] && "url" in raw["Démonstration"] ? raw["Démonstration"].url || "" : "",
+        status: raw.Statut && isStatusProperty(raw.Statut)
+          ? getStatus(raw.Statut.status.name || "")
+          : Status.paused,
+        screenshots: raw["Captures d'écran"] && "files" in raw["Captures d'écran"]
+          ? raw["Captures d'écran"].files.map((f: any) => f.file?.url).filter(Boolean)
+          : [],
+        whatILearned: raw["Ce que j'ai appris"] && isRichTextProperty(raw["Ce que j'ai appris"])
+          ? extractRichText(raw["Ce que j'ai appris"])
+          : "",
+        longDescription: raw["Description détaillée"] && isRichTextProperty(raw["Description détaillée"])
+          ? extractRichText(raw["Description détaillée"])
+          : "",
+        problemsAndSolutions: raw["Problèmes et solutions"] && isRichTextProperty(raw["Problèmes et solutions"])
+          ? extractRichText(raw["Problèmes et solutions"])
+          : "",
+        projectType: raw["Type de projet"] && isSelectProperty(raw["Type de projet"])
+          ? getProjectType(raw["Type de projet"].select.name || "")
+          : "personal"
     };
 
     out.push(project);
@@ -134,7 +158,7 @@ export async function getEducationItems(): Promise<EducationItem[]> {
     out.push(obj);
   }
 
-  return out;
+  return out.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 }
 
 export async function getJobs(): Promise<JobItem[]> {
@@ -158,12 +182,15 @@ export async function getJobs(): Promise<JobItem[]> {
       company: job["Entreprise"] && isTitleProperty(job["Entreprise"])
         ? extractTitle(job["Entreprise"]) || ""
         : "",
+      title: job["Intitulé"] && isRichTextProperty(job["Intitulé"])
+        ? extractRichText(job["Intitulé"]) || ""
+        : "",
     };
 
     out.push(obj);
   }
 
-  return out;
+  return out.sort((a, b) => (a.start ?? 0) - (b.start ?? 0));
 }
 
 
