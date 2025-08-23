@@ -110,6 +110,8 @@ export function getStatus(status: string): StatusType {
       return Status.paused;
     case "Abandonné":
       return Status.cancelled;
+    case "Partiellement fonctionnel":
+      return Status.waiting_maj;
     default:
       throw new Error(`Unknown status: ${status}`);
   }

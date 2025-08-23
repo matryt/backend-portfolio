@@ -3,4 +3,5 @@ export enum Status {
     completed = 'completed',
     paused = 'paused',
     cancelled = 'cancelled',
+    waiting_maj = 'waiting-maj'
 }
