@@ -35,35 +35,64 @@ const DATABASES = {
 async function fetchFromDatabase(name: keyof typeof DATABASES): Promise<NotionPageProperties[]> {
   const databaseId = DATABASES[name];
 
-  const res = await fetch(`https://api.notion.com/v1/databases/${databaseId}/query`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${NOTION_TOKEN}`,
-      "Content-Type": "application/json",
-      "Notion-Version": "2022-06-28",
-    },
-    body: JSON.stringify({}),
-  });
+  // Ajouter un timeout pour les requêtes Notion
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 10000);
 
-  if (!res.ok) throw new Error(`Failed to fetch ${name}: ${res.status}`);
+  try {
+    const res = await fetch(`https://api.notion.com/v1/databases/${databaseId}/query`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${NOTION_TOKEN}`,
+        "Content-Type": "application/json",
+        "Notion-Version": "2022-06-28",
+      },
+      body: JSON.stringify({}),
+      signal: controller.signal,
+    });
 
-  const data = (await res.json()) as NotionDatabaseResult;
-  return data.results.map((r) => r.properties);
+    clearTimeout(timeoutId);
+
+    if (!res.ok) throw new Error(`Failed to fetch ${name}: ${res.status}`);
+
+    const data = (await res.json()) as NotionDatabaseResult;
+    return data.results.map((r) => r.properties);
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error(`Timeout fetching ${name} from Notion`);
+    }
+    throw error;
+  }
 }
 
 async function fetchFromPage(pageId: string): Promise<NotionPageProperties> {
-  const res = await fetch(`https://api.notion.com/v1/pages/${pageId}`, {
-    method: "GET",
-    headers: {
-      Authorization: `Bearer ${NOTION_TOKEN}`,
-      "Content-Type": "application/json",
-      "Notion-Version": "2022-06-28",
-    },
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 secondes timeout
 
-  if (!res.ok) throw new Error(`Failed to fetch page ${pageId}: ${res.status}`);
-  const data = (await res.json()) as { properties: NotionPageProperties };
-  return data.properties;
+  try {
+    const res = await fetch(`https://api.notion.com/v1/pages/${pageId}`, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${NOTION_TOKEN}`,
+        "Content-Type": "application/json",
+        "Notion-Version": "2022-06-28",
+      },
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!res.ok) throw new Error(`Failed to fetch page ${pageId}: ${res.status}`);
+    const data = (await res.json()) as { properties: NotionPageProperties };
+    return data.properties;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error(`Timeout fetching page ${pageId} from Notion`);
+    }
+    throw error;
+  }
 }
 
 async function getPersonDetails(personId: string): Promise<PersonDetails> {
@@ -185,6 +214,7 @@ export async function getJobs(): Promise<JobItem[]> {
       title: job["Intitulé"] && isRichTextProperty(job["Intitulé"])
         ? extractRichText(job["Intitulé"]) || ""
         : "",
+      companyUrl: job.Site && "url" in job.Site ? job.Site.url || "" : "",
     };
 
     out.push(obj);
