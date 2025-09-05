@@ -1,4 +1,5 @@
 import dotenv from "dotenv";
+import { getCache, setCache } from "./sqliteCache";
 import type { NotionDatabaseResult, NotionPageProperties } from "./types/notionTypes";
 import type { PersonDetails } from "./types/person";
 import type { Project } from "./types/project";
@@ -32,65 +33,69 @@ const DATABASES = {
   jobs: process.env.NOTION_DB_JOBS || "",
 } as const;
 
-async function fetchFromDatabase(name: keyof typeof DATABASES): Promise<NotionPageProperties[]> {
+// Helper pour convertir le code langue en filtre Notion
+function getLanguageFilter(lang: 'fr' | 'en') {
+  return lang === 'fr' ? 'French' : 'English';
+}
+
+async function fetchFromDatabase(name: keyof typeof DATABASES, lang?: 'fr' | 'en'): Promise<NotionPageProperties[]> {
   const databaseId = DATABASES[name];
 
-  // Ajouter un timeout pour les requêtes Notion
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 10000);
+  // Construire le body de la requête avec filtre optionnel
+  const requestBody: any = {};
+  if (lang) {
+    requestBody.filter = {
+      property: "Language",
+      select: {
+        equals: getLanguageFilter(lang)
+      }
+    };
+  }
 
+  // Timeout compatible Node.js
   try {
-    const res = await fetch(`https://api.notion.com/v1/databases/${databaseId}/query`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${NOTION_TOKEN}`,
-        "Content-Type": "application/json",
-        "Notion-Version": "2022-06-28",
-      },
-      body: JSON.stringify({}),
-      signal: controller.signal,
-    });
+    const res = await Promise.race([
+      fetch(`https://api.notion.com/v1/databases/${databaseId}/query`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${NOTION_TOKEN}`,
+          "Content-Type": "application/json",
+          "Notion-Version": "2022-06-28",
+        },
+        body: JSON.stringify(requestBody),
+      }),
+      new Promise((_, reject) => setTimeout(() => reject(new Error(`Timeout fetching ${name} from Notion`)), 10000))
+    ]);
 
-    clearTimeout(timeoutId);
-
+    if (!(res instanceof Response)) throw res;
     if (!res.ok) throw new Error(`Failed to fetch ${name}: ${res.status}`);
 
     const data = (await res.json()) as NotionDatabaseResult;
     return data.results.map((r) => r.properties);
   } catch (error) {
-    clearTimeout(timeoutId);
-    if (error instanceof Error && error.name === 'AbortError') {
-      throw new Error(`Timeout fetching ${name} from Notion`);
-    }
     throw error;
   }
 }
 
 async function fetchFromPage(pageId: string): Promise<NotionPageProperties> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 secondes timeout
-
   try {
-    const res = await fetch(`https://api.notion.com/v1/pages/${pageId}`, {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${NOTION_TOKEN}`,
-        "Content-Type": "application/json",
-        "Notion-Version": "2022-06-28",
-      },
-      signal: controller.signal,
-    });
+    const res = await Promise.race([
+      fetch(`https://api.notion.com/v1/pages/${pageId}`, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${NOTION_TOKEN}`,
+          "Content-Type": "application/json",
+          "Notion-Version": "2022-06-28",
+        },
+      }),
+      new Promise((_, reject) => setTimeout(() => reject(new Error(`Timeout fetching page ${pageId} from Notion`)), 10000))
+    ]);
 
-    clearTimeout(timeoutId);
-
+    if (!(res instanceof Response)) throw res;
     if (!res.ok) throw new Error(`Failed to fetch page ${pageId}: ${res.status}`);
     const data = (await res.json()) as { properties: NotionPageProperties };
     return data.properties;
   } catch (error) {
-    clearTimeout(timeoutId);
-    if (error instanceof Error && error.name === 'AbortError') {
-      throw new Error(`Timeout fetching page ${pageId} from Notion`);
-    }
     throw error;
   }
 }
@@ -109,8 +114,11 @@ async function getTechnologyDetails(technologyId: string): Promise<string> {
 }
 
 
-export async function fetchProjects(): Promise<Project[]> {
-  const projectsDetails = await fetchFromDatabase("projects");
+export async function fetchProjects(lang: 'fr' | 'en' = 'fr'): Promise<Project[]> {
+  const cacheKey = `projects_${lang}`;
+  const cached = getCache(cacheKey);
+  if (cached) return cached.sort((a: Project, b: Project) => (a.order ?? 0) - (b.order ?? 0)) as Project[];
+  const projectsDetails = await fetchFromDatabase("projects", lang);
   const out: Project[] = [];
 
   for (const raw of projectsDetails) {
@@ -134,38 +142,45 @@ export async function fetchProjects(): Promise<Project[]> {
       name: raw.Nom && isTitleProperty(raw.Nom)
         ? extractTitle(raw.Nom) || ""
         : "",
-        demo: raw["Démonstration"] && "url" in raw["Démonstration"] ? raw["Démonstration"].url || "" : "",
-        status: raw.Statut && isStatusProperty(raw.Statut)
-          ? getStatus(raw.Statut.status.name || "")
-          : Status.paused,
-        screenshots: raw["Captures d'écran"] && "files" in raw["Captures d'écran"]
-          ? raw["Captures d'écran"].files.map((f: any) => f.file?.url).filter(Boolean)
-          : [],
-        whatILearned: raw["Ce que j'ai appris"] && isRichTextProperty(raw["Ce que j'ai appris"])
-          ? extractRichText(raw["Ce que j'ai appris"])
-          : "",
-        longDescription: raw["Description détaillée"] && isRichTextProperty(raw["Description détaillée"])
-          ? extractRichText(raw["Description détaillée"])
-          : "",
-        problemsAndSolutions: raw["Problèmes et solutions"] && isRichTextProperty(raw["Problèmes et solutions"])
-          ? extractRichText(raw["Problèmes et solutions"])
-          : "",
-        projectType: raw["Type de projet"] && isSelectProperty(raw["Type de projet"])
-          ? getProjectType(raw["Type de projet"].select.name || "")
-          : "personal"
+      demo: raw["Démonstration"] && "url" in raw["Démonstration"] ? raw["Démonstration"].url || "" : "",
+      status: raw.Statut && isStatusProperty(raw.Statut)
+        ? getStatus(raw.Statut.status.name || "")
+        : Status.paused,
+      screenshots: raw["Captures d'écran"] && "files" in raw["Captures d'écran"]
+        ? raw["Captures d'écran"].files.map((f: any) => f.file?.url).filter(Boolean)
+        : [],
+      whatILearned: raw["Ce que j'ai appris"] && isRichTextProperty(raw["Ce que j'ai appris"])
+        ? extractRichText(raw["Ce que j'ai appris"])
+        : "",
+      longDescription: raw["Description détaillée"] && isRichTextProperty(raw["Description détaillée"])
+        ? extractRichText(raw["Description détaillée"])
+        : "",
+      problemsAndSolutions: raw["Problèmes et solutions"] && isRichTextProperty(raw["Problèmes et solutions"])
+        ? extractRichText(raw["Problèmes et solutions"])
+        : "",
+      projectType: raw["Type de projet"] && isSelectProperty(raw["Type de projet"])
+        ? getProjectType(raw["Type de projet"].select.name || "")
+        : "personal",
+      order: raw.Ordre && isNumberProperty(raw.Ordre)
+        ? raw.Ordre.number
+        : undefined,
     };
 
     out.push(project);
   }
 
-  return out;
+    setCache(cacheKey, out);
+  return out.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 }
 
-export async function getEducationItems(): Promise<EducationItem[]> {
-  const items = await fetchFromDatabase("education");
+export async function getEducationItems(lang: 'fr' | 'en' = 'fr'): Promise<EducationItem[]> {
+  const cacheKey = `education_${lang}`;
+    const cached = getCache(cacheKey);
+  if (cached) return (cached as EducationItem[]).sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  const educationDetails = await fetchFromDatabase("education", lang);
   const out: EducationItem[] = [];
 
-  for (const item of items) {
+  for (const item of educationDetails) {
     const obj: EducationItem = {
       start: item["Début"] && isNumberProperty(item["Début"])
         ? item["Début"].number
@@ -187,11 +202,15 @@ export async function getEducationItems(): Promise<EducationItem[]> {
     out.push(obj);
   }
 
+    setCache(cacheKey, out);
   return out.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 }
 
-export async function getJobs(): Promise<JobItem[]> {
-  const jobs = await fetchFromDatabase("jobs");
+export async function getJobs(lang: 'fr' | 'en' = 'fr'): Promise<JobItem[]> {
+  const cacheKey = `jobs_${lang}`;
+  const cached = getCache(cacheKey);
+  if (cached) return (cached as JobItem[]).sort((a, b) => (a.start ?? 0) - (b.start ?? 0));
+  const jobs = await fetchFromDatabase("jobs", lang);
   const out: JobItem[] = [];
 
   for (const job of jobs) {
@@ -220,6 +239,7 @@ export async function getJobs(): Promise<JobItem[]> {
     out.push(obj);
   }
 
+    setCache(cacheKey, out);
   return out.sort((a, b) => (a.start ?? 0) - (b.start ?? 0));
 }
 
