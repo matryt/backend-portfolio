@@ -2,7 +2,7 @@ import dotenv from "dotenv";
 import { getCache, setCache } from "./sqliteCache";
 import type { NotionDatabaseResult, NotionPageProperties } from "./types/notionTypes";
 import type { PersonDetails } from "./types/person";
-import type { Project } from "./types/project";
+import type { Project, ProjectData, ProjectImages } from "./types/project";
 import type { EducationItem, JobItem } from "./types/dataTypes";
 import {
   isRelationProperty,
@@ -114,15 +114,17 @@ async function getTechnologyDetails(technologyId: string): Promise<string> {
 }
 
 
-export async function fetchProjects(lang: 'fr' | 'en' = 'fr'): Promise<Project[]> {
+export async function fetchProjects(lang: 'fr' | 'en' = 'fr'): Promise<ProjectData[]> {
   const cacheKey = `projects_${lang}`;
   const cached = getCache(cacheKey);
-  if (cached) return cached.sort((a: Project, b: Project) => (a.order ?? 0) - (b.order ?? 0)) as Project[];
+  if (cached) return cached.sort((a: ProjectData, b: ProjectData) => (a.order ?? 0) - (b.order ?? 0)) as ProjectData[];
   const projectsDetails = await fetchFromDatabase("projects", lang);
-  const out: Project[] = [];
+  const out: ProjectData[] = [];
 
   for (const raw of projectsDetails) {
-    const project: Project = {
+    const projectName = raw.Nom && isTitleProperty(raw.Nom) ? extractTitle(raw.Nom) || "" : "";
+    const project: ProjectData = {
+      id: projectName, // Utiliser le nom comme ID
       partners: raw["Réalisé avec"] && isRelationProperty(raw["Réalisé avec"])
         ? await Promise.all(raw["Réalisé avec"].relation.map((r) => getPersonDetails(r.id)))
         : [],
@@ -130,25 +132,19 @@ export async function fetchProjects(lang: 'fr' | 'en' = 'fr'): Promise<Project[]
         ? extractRichText(raw.Description)
         : "",
       github: raw.Github && "url" in raw.Github ? raw.Github.url || "" : "",
-      image: raw.Illustration && "files" in raw.Illustration
-        ? raw.Illustration.files[0]?.file?.url || ""
-        : "",
+      hasImage: raw.Illustration && "files" in raw.Illustration && raw.Illustration.files.length > 0,
       displayed: raw["Affiché"] && isCheckboxProperty(raw["Affiché"])
         ? raw["Affiché"].checkbox
         : false,
       technologies: raw["Technologies"] && isRelationProperty(raw["Technologies"])
         ? await Promise.all(raw["Technologies"].relation.map((t) => getTechnologyDetails(t.id)))
         : [],
-      name: raw.Nom && isTitleProperty(raw.Nom)
-        ? extractTitle(raw.Nom) || ""
-        : "",
+      name: projectName,
       demo: raw["Démonstration"] && "url" in raw["Démonstration"] ? raw["Démonstration"].url || "" : "",
       status: raw.Statut && isStatusProperty(raw.Statut)
         ? getStatus(raw.Statut.status.name || "")
         : Status.paused,
-      screenshots: raw["Captures d'écran"] && "files" in raw["Captures d'écran"]
-        ? raw["Captures d'écran"].files.map((f: any) => f.file?.url).filter(Boolean)
-        : [],
+      hasScreenshots: raw["Captures d'écran"] && "files" in raw["Captures d'écran"] && raw["Captures d'écran"].files.length > 0,
       whatILearned: raw["Ce que j'ai appris"] && isRichTextProperty(raw["Ce que j'ai appris"])
         ? extractRichText(raw["Ce que j'ai appris"])
         : "",
@@ -169,8 +165,75 @@ export async function fetchProjects(lang: 'fr' | 'en' = 'fr'): Promise<Project[]
     out.push(project);
   }
 
-    setCache(cacheKey, out);
+  setCache(cacheKey, out);
   return out.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+}
+
+// Nouvelle fonction pour récupérer les images d'un projet en temps réel
+export async function fetchProjectImages(projectName: string, lang: 'fr' | 'en' = 'fr'): Promise<ProjectImages | null> {
+  try {
+    const projectsDetails = await fetchFromDatabase("projects", lang);
+    
+    const projectData = projectsDetails.find((raw) => {
+      const name = raw.Nom && isTitleProperty(raw.Nom) ? extractTitle(raw.Nom) : "";
+      return name === projectName;
+    });
+
+    if (!projectData) return null;
+
+    const image = projectData.Illustration && "files" in projectData.Illustration
+      ? projectData.Illustration.files[0]?.file?.url || ""
+      : "";
+    
+    const screenshots = projectData["Captures d'écran"] && "files" in projectData["Captures d'écran"]
+      ? projectData["Captures d'écran"].files.map((f: any) => f.file?.url).filter(Boolean)
+      : [];
+
+    return {
+      id: projectName,
+      image,
+      screenshots,
+    };
+  } catch (error) {
+    console.error(`Error fetching images for project ${projectName}:`, error);
+    return null;
+  }
+}
+
+// Fonction pour récupérer les images de plusieurs projets en batch
+export async function fetchProjectImagesBatch(projectNames: string[], lang: 'fr' | 'en' = 'fr'): Promise<ProjectImages[]> {
+  try {
+    const projectsDetails = await fetchFromDatabase("projects", lang);
+    const results: ProjectImages[] = [];
+    
+    for (const projectName of projectNames) {
+      const projectData = projectsDetails.find((raw) => {
+        const name = raw.Nom && isTitleProperty(raw.Nom) ? extractTitle(raw.Nom) : "";
+        return name === projectName;
+      });
+
+      if (projectData) {
+        const image = projectData.Illustration && "files" in projectData.Illustration
+          ? projectData.Illustration.files[0]?.file?.url || ""
+          : "";
+        
+        const screenshots = projectData["Captures d'écran"] && "files" in projectData["Captures d'écran"]
+          ? projectData["Captures d'écran"].files.map((f: any) => f.file?.url).filter(Boolean)
+          : [];
+
+        results.push({
+          id: projectName,
+          image,
+          screenshots,
+        });
+      }
+    }
+    
+    return results;
+  } catch (error) {
+    console.error(`Error fetching batch images for projects:`, error);
+    return [];
+  }
 }
 
 export async function getEducationItems(lang: 'fr' | 'en' = 'fr'): Promise<EducationItem[]> {

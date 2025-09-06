@@ -17,6 +17,10 @@ export function resetCache() {
   db.run("DELETE FROM cache");
 }
 
+export function clearCache() {
+  db.run("DELETE FROM cache");
+}
+
 export function resetCacheByType(type: "projects" | "education" | "jobs" | "all", lang?: string) {
   if (type === "all") {
     db.run("DELETE FROM cache");
