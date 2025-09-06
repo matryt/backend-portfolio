@@ -52,8 +52,10 @@ async function fetchFromDatabase(name: keyof typeof DATABASES, lang?: 'fr' | 'en
     };
   }
 
-  // Timeout compatible Node.js
+  // Timeout compatible Node.js avec timeout plus long
   try {
+    const startTime = Date.now();
+    
     const res = await Promise.race([
       fetch(`https://api.notion.com/v1/databases/${databaseId}/query`, {
         method: "POST",
@@ -64,8 +66,10 @@ async function fetchFromDatabase(name: keyof typeof DATABASES, lang?: 'fr' | 'en
         },
         body: JSON.stringify(requestBody),
       }),
-      new Promise((_, reject) => setTimeout(() => reject(new Error(`Timeout fetching ${name} from Notion`)), 10000))
+      new Promise((_, reject) => setTimeout(() => reject(new Error(`Timeout fetching ${name} from Notion (after 20s)`)), 20000)) // Augmenté à 20s
     ]);
+
+    const duration = Date.now() - startTime;
 
     if (!(res instanceof Response)) throw res;
     if (!res.ok) throw new Error(`Failed to fetch ${name}: ${res.status}`);
@@ -117,7 +121,10 @@ async function getTechnologyDetails(technologyId: string): Promise<string> {
 export async function fetchProjects(lang: 'fr' | 'en' = 'fr'): Promise<ProjectData[]> {
   const cacheKey = `projects_${lang}`;
   const cached = getCache(cacheKey);
-  if (cached) return cached.sort((a: ProjectData, b: ProjectData) => (a.order ?? 0) - (b.order ?? 0)) as ProjectData[];
+  if (cached) {
+    return cached.sort((a: ProjectData, b: ProjectData) => (a.order ?? 0) - (b.order ?? 0)) as ProjectData[];
+  }
+  
   const projectsDetails = await fetchFromDatabase("projects", lang);
   const out: ProjectData[] = [];
 
@@ -169,9 +176,20 @@ export async function fetchProjects(lang: 'fr' | 'en' = 'fr'): Promise<ProjectDa
   return out.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 }
 
+// Cache temporaire en mémoire pour les images (URLs avec expiration)
+const imageCache = new Map<string, { data: ProjectImages, timestamp: number }>();
+const IMAGE_CACHE_DURATION = 30 * 60 * 1000; // 30 minutes en millisecondes
+
 // Nouvelle fonction pour récupérer les images d'un projet en temps réel
 export async function fetchProjectImages(projectName: string, lang: 'fr' | 'en' = 'fr'): Promise<ProjectImages | null> {
   try {
+    // Vérifier le cache temporaire d'images
+    const cacheKey = `images_${projectName}_${lang}`;
+    const cached = imageCache.get(cacheKey);
+    
+    if (cached && (Date.now() - cached.timestamp) < IMAGE_CACHE_DURATION) {
+      return cached.data;
+    }
     const projectsDetails = await fetchFromDatabase("projects", lang);
     
     const projectData = projectsDetails.find((raw) => {
@@ -189,13 +207,17 @@ export async function fetchProjectImages(projectName: string, lang: 'fr' | 'en' 
       ? projectData["Captures d'écran"].files.map((f: any) => f.file?.url).filter(Boolean)
       : [];
 
-    return {
+    const result = {
       id: projectName,
       image,
       screenshots,
     };
+
+    // Sauvegarder dans le cache temporaire
+    imageCache.set(cacheKey, { data: result, timestamp: Date.now() });
+
+    return result;
   } catch (error) {
-    console.error(`Error fetching images for project ${projectName}:`, error);
     return null;
   }
 }
@@ -203,35 +225,57 @@ export async function fetchProjectImages(projectName: string, lang: 'fr' | 'en' 
 // Fonction pour récupérer les images de plusieurs projets en batch
 export async function fetchProjectImagesBatch(projectNames: string[], lang: 'fr' | 'en' = 'fr'): Promise<ProjectImages[]> {
   try {
-    const projectsDetails = await fetchFromDatabase("projects", lang);
+    // Vérifier quels projets sont déjà en cache
     const results: ProjectImages[] = [];
+    const projectsToFetch: string[] = [];
     
     for (const projectName of projectNames) {
-      const projectData = projectsDetails.find((raw) => {
-        const name = raw.Nom && isTitleProperty(raw.Nom) ? extractTitle(raw.Nom) : "";
-        return name === projectName;
-      });
-
-      if (projectData) {
-        const image = projectData.Illustration && "files" in projectData.Illustration
-          ? projectData.Illustration.files[0]?.file?.url || ""
-          : "";
-        
-        const screenshots = projectData["Captures d'écran"] && "files" in projectData["Captures d'écran"]
-          ? projectData["Captures d'écran"].files.map((f: any) => f.file?.url).filter(Boolean)
-          : [];
-
-        results.push({
-          id: projectName,
-          image,
-          screenshots,
-        });
+      const cacheKey = `images_${projectName}_${lang}`;
+      const cached = imageCache.get(cacheKey);
+      
+      if (cached && (Date.now() - cached.timestamp) < IMAGE_CACHE_DURATION) {
+        results.push(cached.data);
+      } else {
+        projectsToFetch.push(projectName);
       }
     }
     
+    // Fetch seulement les projets non cachés
+    if (projectsToFetch.length > 0) {
+      const projectsDetails = await fetchFromDatabase("projects", lang);
+      
+      for (const projectName of projectsToFetch) {
+        const projectData = projectsDetails.find((raw) => {
+          const name = raw.Nom && isTitleProperty(raw.Nom) ? extractTitle(raw.Nom) : "";
+          return name === projectName;
+        });
+
+        if (projectData) {
+          const image = projectData.Illustration && "files" in projectData.Illustration
+            ? projectData.Illustration.files[0]?.file?.url || ""
+            : "";
+          
+          const screenshots = projectData["Captures d'écran"] && "files" in projectData["Captures d'écran"]
+            ? projectData["Captures d'écran"].files.map((f: any) => f.file?.url).filter(Boolean)
+            : [];
+
+          const result = {
+            id: projectName,
+            image,
+            screenshots,
+          };
+          
+          // Sauvegarder dans le cache temporaire
+          const cacheKey = `images_${projectName}_${lang}`;
+          imageCache.set(cacheKey, { data: result, timestamp: Date.now() });
+          
+          results.push(result);
+        }
+      }
+    }
+
     return results;
   } catch (error) {
-    console.error(`Error fetching batch images for projects:`, error);
     return [];
   }
 }
