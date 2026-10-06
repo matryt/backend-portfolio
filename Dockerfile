@@ -11,8 +11,7 @@ RUN bun install --production --frozen-lockfile
 # Copie du code source
 COPY . .
 
-# Elysia écoute généralement sur le port 3000 par défaut
-EXPOSE 3000
+EXPOSE 21000
 
 # Commande d'exécution Bun (adapte si ton point d'entrée est src/index.ts)
 CMD ["bun", "run", "index.ts"]
