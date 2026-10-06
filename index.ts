@@ -8,4 +8,14 @@ const app = new Elysia()
   .use(portfolioRoutes)
   .use(cacheRoutes);
 
-app.listen(21000);
+const port = Number(process.env.PORT) || 21000;
+
+app.listen(
+  {
+    port,
+    hostname: "0.0.0.0",
+  },
+  ({ hostname, port }) => {
+    console.log(`🦊 Elysia tourne sur http://${hostname}:${port}`);
+  }
+);
