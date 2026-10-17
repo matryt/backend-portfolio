@@ -3,26 +3,48 @@ import { fetchProjects, getEducationItems, getJobs, fetchProjectImages, fetchPro
 import { createCompressedResponse } from "../utils/compression";
 import nodemailer from 'nodemailer';
 import dotenv from 'dotenv';
+import crypto from 'node:crypto';
 
 dotenv.config({ quiet: true });
 
-// Rate limiter en mémoire pour la route /contact (IP -> timestamps)
+// Rate limiter en mémoire pour la route /contact avec anonymisation de l'IP (RGPD)
 const contactRateLimits = new Map<string, number[]>();
 const RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000; // 10 minutes
 const MAX_MESSAGES_PER_WINDOW = 3;
 
-function isContactRateLimited(ip: string): boolean {
+// Sel généré aléatoirement au démarrage ou lu depuis l'environnement
+const IP_SALT = process.env.RATE_LIMIT_SALT || crypto.randomBytes(16).toString('hex');
+
+function hashIp(ip: string): string {
+  return crypto.createHash('sha256').update(ip + IP_SALT).digest('hex');
+}
+
+function isContactRateLimited(rawIp: string): boolean {
+  const ipKey = hashIp(rawIp);
   const now = Date.now();
-  const timestamps = contactRateLimits.get(ip) || [];
+  const timestamps = contactRateLimits.get(ipKey) || [];
   const validTimestamps = timestamps.filter((t) => now - t < RATE_LIMIT_WINDOW_MS);
   if (validTimestamps.length >= MAX_MESSAGES_PER_WINDOW) {
-    contactRateLimits.set(ip, validTimestamps);
+    contactRateLimits.set(ipKey, validTimestamps);
     return true;
   }
   validTimestamps.push(now);
-  contactRateLimits.set(ip, validTimestamps);
+  contactRateLimits.set(ipKey, validTimestamps);
   return false;
 }
+
+// Purge régulière des clés expirées pour éviter les fuites mémoire
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, timestamps] of contactRateLimits.entries()) {
+    const valid = timestamps.filter((t) => now - t < RATE_LIMIT_WINDOW_MS);
+    if (valid.length === 0) {
+      contactRateLimits.delete(key);
+    } else {
+      contactRateLimits.set(key, valid);
+    }
+  }
+}, 60 * 60 * 1000).unref();
 
 // Endpoints pour les données du portfolio (frontend)
 export const portfolioRoutes = new Elysia({ prefix: '' })
