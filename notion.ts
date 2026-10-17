@@ -130,8 +130,46 @@ export async function fetchProjects(lang: 'fr' | 'en' = 'fr'): Promise<ProjectDa
 
   for (const raw of projectsDetails) {
     const projectName = raw.Nom && isTitleProperty(raw.Nom) ? extractTitle(raw.Nom) || "" : "";
+    const slug = projectName
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/(^-|-$)/g, "");
+
+    const featuredProp = raw["En avant"] || raw["Featured"];
+    const featured = featuredProp && isCheckboxProperty(featuredProp)
+      ? featuredProp.checkbox
+      : undefined;
+
+    const domainProp = raw["Domaine"] || raw["Domain"];
+    let domain: string | undefined = undefined;
+    if (domainProp) {
+      if (isSelectProperty(domainProp) && domainProp.select?.name) {
+        domain = domainProp.select.name.toUpperCase();
+      } else if (isRichTextProperty(domainProp)) {
+        domain = extractRichText(domainProp).toUpperCase();
+      }
+    }
+
+    const captureLabelProp = raw["Label capture"] || raw["Capture label"] || raw["Label"];
+    const captureLabel = captureLabelProp && isRichTextProperty(captureLabelProp)
+      ? extractRichText(captureLabelProp)
+      : undefined;
+
+    const deploymentProp = raw["Mise en production"] || raw["Déploiement"] || raw["Deployment"];
+    const deployment = deploymentProp && isRichTextProperty(deploymentProp)
+      ? extractRichText(deploymentProp)
+      : undefined;
+
+    const problemsProp = raw["Choix de conception"] || raw["Problèmes et solutions"];
+    const problemsAndSolutions = problemsProp && isRichTextProperty(problemsProp)
+      ? extractRichText(problemsProp)
+      : "";
+
     const project: ProjectData = {
       id: projectName, // Utiliser le nom comme ID
+      slug,
       partners: raw["Réalisé avec"] && isRelationProperty(raw["Réalisé avec"])
         ? await Promise.all(raw["Réalisé avec"].relation.map((r) => getPersonDetails(r.id)))
         : [],
@@ -143,6 +181,10 @@ export async function fetchProjects(lang: 'fr' | 'en' = 'fr'): Promise<ProjectDa
       displayed: raw["Affiché"] && isCheckboxProperty(raw["Affiché"])
         ? raw["Affiché"].checkbox
         : false,
+      featured,
+      domain,
+      captureLabel,
+      deployment,
       technologies: raw["Technologies"] && isRelationProperty(raw["Technologies"])
         ? await Promise.all(raw["Technologies"].relation.map((t) => getTechnologyDetails(t.id)))
         : [],
@@ -158,9 +200,7 @@ export async function fetchProjects(lang: 'fr' | 'en' = 'fr'): Promise<ProjectDa
       longDescription: raw["Description détaillée"] && isRichTextProperty(raw["Description détaillée"])
         ? extractRichText(raw["Description détaillée"])
         : "",
-      problemsAndSolutions: raw["Problèmes et solutions"] && isRichTextProperty(raw["Problèmes et solutions"])
-        ? extractRichText(raw["Problèmes et solutions"])
-        : "",
+      problemsAndSolutions,
       projectType: raw["Type de projet"] && isSelectProperty(raw["Type de projet"])
         ? getProjectType(raw["Type de projet"].select.name || "")
         : "personal",

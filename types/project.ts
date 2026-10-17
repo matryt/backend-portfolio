@@ -3,12 +3,17 @@ import type { Status } from "./status";
 export interface Project {
   id?: string; // Ajout de l'id pour identifier le projet
   name: string;
+  slug?: string;
   description?: string;
   github?: string;
   image?: string; // Sera retiré des endpoints principaux
   partners?: Array<{ username?: string; name?: string; githubUrl?: string }>;
   technologies?: string[];
   displayed?: boolean;
+  featured?: boolean;
+  domain?: string;
+  captureLabel?: string;
+  deployment?: string;
   demo?: string;
   status?: Status;
   screenshots?: string[]; // Sera retiré des endpoints principaux

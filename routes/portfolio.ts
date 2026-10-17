@@ -15,6 +15,16 @@ export const portfolioRoutes = new Elysia({ prefix: '' })
     return await createCompressedResponse(projects, request);
   })
 
+  .get("/project/:nameOrSlug", async ({ params, query, request }) => {
+    const lang = query.lang as 'fr' | 'en' || 'fr';
+    const target = decodeURIComponent(params.nameOrSlug).toLowerCase();
+    const projects = await fetchProjects(lang);
+    const project = projects.find(
+      (p) => p.slug === target || p.name.toLowerCase() === target || p.id?.toLowerCase() === target
+    );
+    return await createCompressedResponse(project || null, request);
+  })
+
   .get("/education", async ({ query, request }) => {
     const lang = query.lang as 'fr' | 'en' || 'fr';
     const education = await getEducationItems(lang);
