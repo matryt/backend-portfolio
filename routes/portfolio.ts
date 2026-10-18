@@ -57,10 +57,21 @@ export const portfolioRoutes = new Elysia({ prefix: '' })
 
   .get("/project/:nameOrSlug", async ({ params, query, request }) => {
     const lang = query.lang as 'fr' | 'en' || 'fr';
-    const target = decodeURIComponent(params.nameOrSlug).toLowerCase();
+    const normalize = (str: string) =>
+      str
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/(^-|-$)/g, "");
+
+    const target = normalize(decodeURIComponent(params.nameOrSlug));
     const projects = await fetchProjects(lang);
     const project = projects.find(
-      (p) => p.slug === target || p.name.toLowerCase() === target || p.id?.toLowerCase() === target
+      (p) =>
+        (p.slug && normalize(p.slug) === target) ||
+        normalize(p.name) === target ||
+        (p.id && normalize(p.id) === target)
     );
     return await createCompressedResponse(project || null, request);
   })
