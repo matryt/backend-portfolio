@@ -180,3 +180,61 @@ export function getStatus(status: string): StatusType {
 export function getProjectType(typ: string) {
   return typ === "Personnel" ? "personal" : "school";
 }
+
+/**
+ * Analyse une propriété de lien qui peut être :
+ * - Une URL Notion standard
+ * - Un texte enrichi contenant une URL
+ * - Un texte enrichi contenant un lien Markdown [texte](url)
+ * - Un texte enrichi contenant une mention/restriction (ex: "Dépôt privé (projet client / convention associative)")
+ * - Ou complété par une colonne dédiée de note/statut
+ */
+export function parseLinkAndNote(
+  urlOrTextProp: any,
+  dedicatedNoteProp?: any
+): { url: string; note?: string } {
+  let url = "";
+  let note: string | undefined = undefined;
+
+  if (urlOrTextProp) {
+    if ("url" in urlOrTextProp && urlOrTextProp.url) {
+      url = String(urlOrTextProp.url).trim();
+    } else if (isRichTextProperty(urlOrTextProp)) {
+      const rawText = extractRichText(urlOrTextProp).trim();
+      if (rawText) {
+        // Lien Markdown [texte](url) suivi d'une note optionnelle
+        const mdMatch = rawText.match(/^\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)(?:\s*(.*))?$/);
+        if (mdMatch) {
+          url = mdMatch[2].trim();
+          const extra = mdMatch[3]?.trim();
+          if (extra) {
+            note = extra.replace(/^\((.*)\)$/, "$1").trim();
+          }
+        } else {
+          // URL suivie d'une note optionnelle
+          const urlMatch = rawText.match(/^(https?:\/\/[^\s]+)(?:\s+(.*))?$/);
+          if (urlMatch) {
+            url = urlMatch[1].trim();
+            const extra = urlMatch[2]?.trim();
+            if (extra) {
+              note = extra.replace(/^\((.*)\)$/, "$1").trim();
+            }
+          } else {
+            // Texte brut informatif (ex: "Dépôt privé (projet client / convention associative)")
+            note = rawText;
+          }
+        }
+      }
+    }
+  }
+
+  // Colonne dédiée (prioritaire si renseignée)
+  if (dedicatedNoteProp && isRichTextProperty(dedicatedNoteProp)) {
+    const dedicatedNote = extractRichText(dedicatedNoteProp).trim();
+    if (dedicatedNote) {
+      note = dedicatedNote;
+    }
+  }
+
+  return { url, note: note || undefined };
+}

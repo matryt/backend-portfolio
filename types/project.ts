@@ -6,6 +6,7 @@ export interface Project {
   slug?: string;
   description?: string;
   github?: string;
+  githubNote?: string;
   image?: string; // Sera retiré des endpoints principaux
   partners?: Array<{ username?: string; name?: string; githubUrl?: string }>;
   technologies?: string[];
@@ -15,6 +16,7 @@ export interface Project {
   captureLabel?: string;
   deployment?: string;
   demo?: string;
+  demoNote?: string;
   status?: Status;
   longDescription?: string;
   designChoices?: string;

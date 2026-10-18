@@ -18,6 +18,7 @@ import {
   getStatus,
   isSelectProperty,
   getProjectType,
+  parseLinkAndNote,
 } from "./types/notionTypes";
 import { Status } from "./types/status";
 
@@ -167,6 +168,14 @@ export async function fetchProjects(lang: 'fr' | 'en' = 'fr'): Promise<ProjectDa
       ? extractRichText(designChoicesProp)
       : "";
 
+    const githubProp = raw.Github || raw.github || raw["Dépôt"] || raw["Repo"];
+    const githubNoteProp = raw["Note Github"] || raw["Statut Github"] || raw["Accès Github"] || raw["Label Github"] || raw["Github note"];
+    const parsedGithub = parseLinkAndNote(githubProp, githubNoteProp);
+
+    const demoProp = raw["Démonstration"] || raw["Demonstration"] || raw["Demo"] || raw["Démo"];
+    const demoNoteProp = raw["Note démo"] || raw["Note Démo"] || raw["Accès démo"] || raw["Accès Démo"] || raw["Statut démo"] || raw["Statut Démo"] || raw["Label démo"] || raw["Label Démo"];
+    const parsedDemo = parseLinkAndNote(demoProp, demoNoteProp);
+
     const project: ProjectData = {
       id: projectName, // Utiliser le nom comme ID
       slug,
@@ -176,7 +185,8 @@ export async function fetchProjects(lang: 'fr' | 'en' = 'fr'): Promise<ProjectDa
       description: raw.Description && isRichTextProperty(raw.Description)
         ? extractRichText(raw.Description)
         : "",
-      github: raw.Github && "url" in raw.Github ? raw.Github.url || "" : "",
+      github: parsedGithub.url,
+      githubNote: parsedGithub.note,
       hasImage: raw.Illustration && "files" in raw.Illustration && raw.Illustration.files.length > 0,
       displayed: raw["Affiché"] && isCheckboxProperty(raw["Affiché"])
         ? raw["Affiché"].checkbox
@@ -189,7 +199,8 @@ export async function fetchProjects(lang: 'fr' | 'en' = 'fr'): Promise<ProjectDa
         ? await Promise.all(raw["Technologies"].relation.map((t) => getTechnologyDetails(t.id)))
         : [],
       name: projectName,
-      demo: raw["Démonstration"] && "url" in raw["Démonstration"] ? raw["Démonstration"].url || "" : "",
+      demo: parsedDemo.url,
+      demoNote: parsedDemo.note,
       status: raw.Statut && isStatusProperty(raw.Statut)
         ? getStatus(raw.Statut.status.name || "")
         : Status.paused,
