@@ -86,14 +86,74 @@ export function extractRichText(prop: any): string {
   if (!prop) return "";
   const arr = prop.rich_text as Array<any> | undefined;
   if (!arr || arr.length === 0) return "";
-  return arr[0].text?.content || "";
+
+  return arr
+    .map((item) => {
+      const content = item.text?.content || item.plain_text || "";
+      if (!content) return "";
+
+      const annotations = item.annotations;
+      const linkUrl = item.text?.link?.url || item.href;
+
+      const hasAnnotations =
+        Boolean(annotations?.code) ||
+        Boolean(annotations?.bold) ||
+        Boolean(annotations?.italic) ||
+        Boolean(annotations?.strikethrough) ||
+        Boolean(linkUrl);
+
+      if (!hasAnnotations) {
+        return content;
+      }
+
+      // Traiter ligne par ligne pour préserver les sauts de ligne et les préfixes de blocs (listes, titres)
+      return content
+        .split("\n")
+        .map((line) => {
+          if (!line) return "";
+
+          // Préserver les préfixes de listes ou de titres si l'utilisateur a tout sélectionné
+          const blockPrefixMatch = line.match(/^(\s*(?:[-*]\s+|\d+\.\s+|#{2,4}\s+))/);
+          const blockPrefix = blockPrefixMatch ? blockPrefixMatch[0] : "";
+          const afterBlock = line.slice(blockPrefix.length);
+
+          const leadingSpace = afterBlock.match(/^\s*/)?.[0] || "";
+          const trailingSpace = afterBlock.match(/\s*$/)?.[0] || "";
+          let trimmed = afterBlock.trim();
+
+          if (!trimmed) {
+            return line;
+          }
+
+          if (annotations?.code) {
+            trimmed = `\`${trimmed}\``;
+          }
+          if (annotations?.bold && annotations?.italic) {
+            trimmed = `***${trimmed}***`;
+          } else if (annotations?.bold) {
+            trimmed = `**${trimmed}**`;
+          } else if (annotations?.italic) {
+            trimmed = `*${trimmed}*`;
+          }
+          if (annotations?.strikethrough) {
+            trimmed = `~~${trimmed}~~`;
+          }
+          if (linkUrl) {
+            trimmed = `[${trimmed}](${linkUrl})`;
+          }
+
+          return `${blockPrefix}${leadingSpace}${trimmed}${trailingSpace}`;
+        })
+        .join("\n");
+    })
+    .join("");
 }
 
 export function extractTitle(prop: any): string | undefined {
   if (!prop) return undefined;
   const arr = prop.title as Array<any> | undefined;
   if (!arr || arr.length === 0) return undefined;
-  return arr[0].text?.content;
+  return arr.map((item) => item.text?.content || item.plain_text || "").join("");
 }
 
 export function getTimestamp(date: string) {
