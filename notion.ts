@@ -162,9 +162,9 @@ export async function fetchProjects(lang: 'fr' | 'en' = 'fr'): Promise<ProjectDa
       ? extractRichText(deploymentProp)
       : undefined;
 
-    const problemsProp = raw["Choix de conception"] || raw["Problèmes et solutions"];
-    const problemsAndSolutions = problemsProp && isRichTextProperty(problemsProp)
-      ? extractRichText(problemsProp)
+    const designChoicesProp = raw["Choix de conception"] || raw["Problèmes et solutions"];
+    const designChoices = designChoicesProp && isRichTextProperty(designChoicesProp)
+      ? extractRichText(designChoicesProp)
       : "";
 
     const project: ProjectData = {
@@ -194,13 +194,10 @@ export async function fetchProjects(lang: 'fr' | 'en' = 'fr'): Promise<ProjectDa
         ? getStatus(raw.Statut.status.name || "")
         : Status.paused,
       hasScreenshots: raw["Captures d'écran"] && "files" in raw["Captures d'écran"] && raw["Captures d'écran"].files.length > 0,
-      whatILearned: raw["Ce que j'ai appris"] && isRichTextProperty(raw["Ce que j'ai appris"])
-        ? extractRichText(raw["Ce que j'ai appris"])
-        : "",
       longDescription: raw["Description détaillée"] && isRichTextProperty(raw["Description détaillée"])
         ? extractRichText(raw["Description détaillée"])
         : "",
-      problemsAndSolutions,
+      designChoices,
       projectType: raw["Type de projet"] && isSelectProperty(raw["Type de projet"])
         ? getProjectType(raw["Type de projet"].select.name || "")
         : "personal",

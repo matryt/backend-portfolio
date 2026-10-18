@@ -16,10 +16,8 @@ export interface Project {
   deployment?: string;
   demo?: string;
   status?: Status;
-  screenshots?: string[]; // Sera retiré des endpoints principaux
-  whatILearned?: string;
   longDescription?: string;
-  problemsAndSolutions?: string;
+  designChoices?: string;
   projectType?: "personal" | "school";
   order?: number;
   [key: string]: any;
