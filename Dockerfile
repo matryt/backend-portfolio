@@ -1,4 +1,4 @@
-FROM oven/bun:1.4.2-alpine
+FROM oven/bun:1.4.4-alpine
 
 WORKDIR /app
 
@@ -13,5 +13,4 @@ COPY . .
 
 EXPOSE 21000
 
-# Commande d'exécution Bun (adapte si ton point d'entrée est src/index.ts)
 CMD ["bun", "run", "index.ts"]

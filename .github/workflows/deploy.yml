@@ -3,6 +3,7 @@ name: Build and Push ARM64
 on:
   push:
     branches: [ master ]
+  workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io
@@ -33,5 +34,6 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
+          pull: true
           push: true
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
